@@ -1,0 +1,192 @@
+---
+title: "TCGA Mutation data Analysis"
+author: "njepsi"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(ggplot2)
+require(tidyverse)
+require(formattable)
+require(ggpubr)
+require(scales)
+options(warn = -1)
+```
+
+
+
+## Results
+Following packages need to be loaded:
+
+require(ggplot2)
+
+require(tidyverse)
+
+require(formattable)
+
+require(ggpubr)
+
+require(scales)
+
+
+Import TCGA mutation data and Clinical data:
+```{r}
+
+TCGA_mutation_data <- read.csv("~/R stuff/test coding/mc3.v0.2.8.PUBLIC.filtered_qual_SNP_1_22_21_COSMIC_census.maf")
+clinical_data <- read.csv("~/R stuff/test coding/tcga_finalized_clinical_data.csv", row.names=1)
+
+```
+
+Merge TCGA mutation data and Clinical data based on Patient barcode:
+
+```{r }
+#Linking mutation data and clinical data
+#trimming column names
+TCGA_mutation_data$bcr_patient_barcode <- substring(TCGA_mutation_data$Tumor_Sample_Barcode, 1,12)
+
+#Checking if we have the same Patient barcode in the both dataset
+clinical_data <- subset(clinical_data, bcr_patient_barcode %in% unique(TCGA_mutation_data$bcr_patient_barcode))
+
+#Merge both dataset based on patient barcode
+TCGA_mutation_data <- merge( clinical_data[,c("bcr_patient_barcode", "type", "age_at_initial_pathologic_diagnosis")], TCGA_mutation_data,by = "bcr_patient_barcode", all = TRUE)
+
+
+```
+#1.
+a. Plot shows frequency of KRAS mutation by cancer type (sorted from most to least) in TCGA
+
+```{r }
+
+data_KRAS <- subset(TCGA_mutation_data, Hugo_Symbol == "KRAS")
+
+data_KRAS_plot <- as.data.frame(table(data_KRAS$type, data_KRAS$Variant_Classification))
+ggplot(data=data_KRAS_plot, aes(x=reorder(Var1,-Freq), y=Freq, fill = Var2)) +
+  geom_bar(stat="identity") + theme_classic() + labs(y = "Frequency of mutations", x = "Cancer type",fill = "Variant Classification") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+        text = element_text(face = "bold", size = 13, color = "black"),
+        axis.text = element_text(color = "black"))+
+  scale_fill_manual(values = c("yellow", "darkgreen", "blue4", "lightblue", "maroon3")) 
+  
+```
+
+
+#2.
+Plot shows frequency of KRAS mutation by cancer type without Silent mutation 
+
+```{r}
+data_KRAS_s <- subset(TCGA_mutation_data, Hugo_Symbol == "KRAS" & !Variant_Classification == "Silent")
+
+data_KRAS_s <- as.data.frame(table(data_KRAS_s$type, data_KRAS_s$Variant_Classification))
+
+ggplot(data=data_KRAS_s, aes(x=reorder(Var1,-Freq), y=Freq, fill = Var2)) +
+  geom_bar(stat="identity") + theme_classic() + labs(y = "Frequency of mutations", x = "Cancer type",fill = "Variant Classification") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+        text = element_text(face = "bold", size = 13, color = "black"),
+        axis.text = element_text(color = "black"))+
+  scale_fill_manual(values = c("yellow", "darkgreen", "blue4", "lightblue", "maroon3")) 
+
+
+```
+
+
+#3.
+Plot shows the number of amino acid changes within KRAS
+```{r}
+data_KRAS <- subset(TCGA_mutation_data, Hugo_Symbol == "KRAS")
+data_KRAS_s <- as.data.frame(table(data_KRAS$HGVSp_Short))
+ggplot(data=data_KRAS_s, aes(x=reorder(Var1,-Freq), y=Freq)) +
+  geom_bar(stat="identity", fill = "#999999") + theme_classic() + labs(y = "Frequency of mutations", x = "Amino acid changes") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+        text = element_text(face = "bold", color = "black"),
+        axis.text = element_text(color = "black")) 
+
+
+```
+
+
+#4.
+According to the data, the most frequent G12D KRAS mutation occur in Colon adenocarcinoma (COAD). Below are details:
+
+```{r}
+
+
+#a. Raw numbers
+
+
+TCGA_mutation_data %>% 
+  filter(Hugo_Symbol == "KRAS" & HGVSp_Short == "p.G12D") %>%
+  count(type) %>%   slice(which.max(n))
+
+#plot
+data_KRAS_G12D <- subset(data_KRAS, HGVSp_Short == "p.G12D")
+data_KRAS_G12D <- subset(data_KRAS_G12D, !is.na(type))
+data_KRAS_G12D_raw <- as.data.frame(table(data_KRAS_G12D$type))
+ggplot(data=data_KRAS_G12D_raw, aes(x=reorder(Var1,-Freq), y=Freq)) +
+  geom_bar(stat="identity", fill = "#999999") + theme_classic() + labs(y = "Frequency of mutations", x = "Cancer type") +
+  theme(
+        text = element_text(face = "bold", size = 20, color = "black"),
+        axis.text = element_text(color = "black")) + coord_flip()
+
+#b. Percent
+
+
+TCGA_mutation_data %>% 
+  filter(Hugo_Symbol == "KRAS" & HGVSp_Short == "p.G12D") %>%
+  count(type) %>%  
+  mutate(percent = formattable::percent(n / sum(n), 2)) %>%
+  arrange(desc(percent))
+
+#plot
+ggplot(data_KRAS_G12D, aes(x = as.factor(type))) +
+  geom_bar(aes(y = (..count..)/sum(..count..))) +
+  geom_text(aes(y = ((..count..)/sum(..count..)), label = scales::percent((..count..)/sum(..count..))), stat = "count", vjust = -0.25) +
+  scale_y_continuous(labels = percent)+theme_classic() + labs(y = "Percentage", x = "Cancer type") +
+  theme(
+        text = element_text(face = "bold", size = 20, color = "black"),
+        axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+        axis.text = element_text(color = "black"))
+
+```
+
+#5.
+Association between age and KRAS mutation status (mutated or WT) in Pancreatic adenocarcinoma (PAAD). 
+Here, in the data I only able to identify frequent mutations. Therefore I stratified KRAS mutation by age group. Age greater than 65 and age less than 65. Below plot shows that, there is significant differences in KRAS mutation (G12D, G12R, and G12V) and age. Patient with age 65 and older shows higher G12D and G12V mutations, where patient age less than 65 shows higher mutation in G12R.
+
+
+
+```{r message=FALSE}
+ data_PAAD <- subset(TCGA_mutation_data, type == "PAAD" & Hugo_Symbol == "KRAS")
+  data_PAAD$age_group <- ifelse(data_PAAD$age_at_initial_pathologic_diagnosis < 65, "Age group < 65", "Age group >= 65" )
+  
+  table(data_PAAD$age_group, data_PAAD$HGVSp_Short)
+  
+ data_KRAS_m <- data.frame(table(data_PAAD$age_group, data_PAAD$HGVSp_Short))
+  
+  ggplot(data=data_KRAS_m, aes(x=Var2, y=Freq, fill=Var1)) +
+    geom_bar(stat="identity", position=position_dodge())+
+    geom_text(aes(label=Freq), vjust=-1, color="Black",
+              position = position_dodge(0.9), size=3.5)+
+    scale_fill_brewer(palette="Paired")+
+    theme_classic() + labs(y = "Frequency of mutations", x = "KRAS mutations", fill = "") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+          text = element_text(face = "bold", size = 15, color = "black"),
+          axis.text = element_text(color = "black")) 
+
+  
+  table(data_PAAD$age_group, data_PAAD$HGVSc)
+
+  data_KRAS_m <- data.frame(table(data_PAAD$age_group, data_PAAD$HGVSc))
+
+ggplot(data=data_KRAS_m, aes(x=Var2, y=Freq, fill=Var1)) +
+    geom_bar(stat="identity", position=position_dodge())+
+    geom_text(aes(label=Freq), vjust=-1, color="Black",
+              position = position_dodge(0.9), size=3.5)+
+    scale_fill_brewer(palette="Paired")+
+    theme_classic() + labs(y = "Frequency of mutations", x = "KRAS mutations (base substitution)", fill = "") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 0.9, hjust=1),
+          text = element_text(face = "bold", size = 15, color = "black"),
+          axis.text = element_text(color = "black")) 
+```
